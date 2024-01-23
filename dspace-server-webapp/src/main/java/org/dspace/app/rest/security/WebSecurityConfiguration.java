@@ -19,12 +19,13 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.builders.WebSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.logout.HttpStatusReturningLogoutSuccessHandler;
 import org.springframework.security.web.authentication.logout.LogoutFilter;
 import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
@@ -40,7 +41,7 @@ import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 @EnableWebSecurity
 @Configuration
 @EnableConfigurationProperties(SecurityProperties.class)
-public class WebSecurityConfiguration extends WebSecurityConfigurerAdapter {
+public class WebSecurityConfiguration {
 
     public static final String ADMIN_GRANT = "ADMIN";
     public static final String AUTHENTICATED_GRANT = "AUTHENTICATED";
@@ -67,10 +68,10 @@ public class WebSecurityConfiguration extends WebSecurityConfigurerAdapter {
     @Value("${management.endpoints.web.base-path:/actuator}")
     private String actuatorBasePath;
 
-    @Override
-    public void configure(WebSecurity webSecurity) throws Exception {
-        // Define URL patterns which Spring Security will ignore entirely.
-        webSecurity
+    @Bean
+    public WebSecurityCustomizer webSecurityCustomizer() {
+        return web -> web
+            // Define URL patterns which Spring Security will ignore entirely.
             .ignoring()
                 // These /login request types are purposefully unsecured, as they all throw errors.
                 .antMatchers(HttpMethod.GET, "/api/authn/login")
@@ -79,12 +80,16 @@ public class WebSecurityConfiguration extends WebSecurityConfigurerAdapter {
                 .antMatchers(HttpMethod.DELETE, "/api/authn/login");
     }
 
+    @Bean
+    public SecurityFilterChain dspaceSecurityFilterChain(HttpSecurity http) throws Exception {
+        AuthenticationManager authenticationManager = http.getSharedObject(AuthenticationManagerBuilder.class)
+            .authenticationProvider(ePersonRestAuthenticationProvider)
+            .parentAuthenticationManager(null)
+            .build();
 
-    @Override
-    protected void configure(HttpSecurity http) throws Exception {
         // Configure authentication requirements for ${dspace.server.url}/api/ URL only
         // NOTE: REST API is hardcoded to respond on /api/. Other modules (OAI, SWORD, IIIF, etc) use other root paths.
-        http.requestMatchers()
+        return http.requestMatchers()
             .antMatchers("/api/**", "/iiif/**", actuatorBasePath + "/**", "/signposting/**")
             .and()
             // Enable Spring Security authorization on these paths
@@ -128,40 +133,42 @@ public class WebSecurityConfiguration extends WebSecurityConfigurerAdapter {
                 // Everyone can call this endpoint
                 .permitAll()
             .and()
+            .authenticationManager(authenticationManager)
 
             // Add a filter before any request to handle DSpace IP-based authorization/authentication
             // (e.g. anonymous users may be added to special DSpace groups if they are in a given IP range)
-            .addFilterBefore(new AnonymousAdditionalAuthorizationFilter(authenticationManager(), authenticationService),
+            .addFilterBefore(new AnonymousAdditionalAuthorizationFilter(authenticationManager, authenticationService),
                              StatelessAuthenticationFilter.class)
             // Add a filter before our login endpoints to do the authentication based on the data in the HTTP request
-            .addFilterBefore(new StatelessLoginFilter("/api/authn/login", authenticationManager(),
+            .addFilterBefore(new StatelessLoginFilter("/api/authn/login", authenticationManager,
                                                       restAuthenticationService),
                              LogoutFilter.class)
             // Add a filter before our shibboleth endpoints to do the authentication based on the data in the
             // HTTP request
-            .addFilterBefore(new ShibbolethLoginFilter("/api/authn/shibboleth", authenticationManager(),
+            .addFilterBefore(new ShibbolethLoginFilter("/api/authn/shibboleth", authenticationManager,
                                                        restAuthenticationService),
                              LogoutFilter.class)
             //Add a filter before our ORCID endpoints to do the authentication based on the data in the
             // HTTP request
-            .addFilterBefore(new OrcidLoginFilter("/api/authn/orcid", authenticationManager(),
+            .addFilterBefore(new OrcidLoginFilter("/api/authn/orcid", authenticationManager,
                                                        restAuthenticationService),
                              LogoutFilter.class)
             //Add a filter before our OIDC endpoints to do the authentication based on the data in the
             // HTTP request
-            .addFilterBefore(new OidcLoginFilter("/api/authn/oidc", authenticationManager(),
+            .addFilterBefore(new OidcLoginFilter("/api/authn/oidc", authenticationManager,
                                                       restAuthenticationService),
+                             LogoutFilter.class)
+            //Add a filter before our SAML endpoints to do the authentication based on the data in the
+            // HTTP request
+            .addFilterBefore(new SamlLoginFilter("/api/authn/saml", authenticationManager,
+                                                 restAuthenticationService),
                              LogoutFilter.class)
             // Add a custom Token based authentication filter based on the token previously given to the client
             // before each URL
-            .addFilterBefore(new StatelessAuthenticationFilter(authenticationManager(), restAuthenticationService,
+            .addFilterBefore(new StatelessAuthenticationFilter(authenticationManager, restAuthenticationService,
                                                                ePersonRestAuthenticationProvider, requestService),
-                             StatelessLoginFilter.class);
-    }
-
-    @Override
-    protected void configure(AuthenticationManagerBuilder auth) throws Exception {
-        auth.authenticationProvider(ePersonRestAuthenticationProvider);
+                             StatelessLoginFilter.class)
+            .build();
     }
 
     /**
