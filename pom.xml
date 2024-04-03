@@ -1095,7 +1095,7 @@
             <dependency>
                 <groupId>org.dspace</groupId>
                 <artifactId>dspace-saml2</artifactId>
-                <version>8.0-SNAPSHOT</version>
+                <version>7.6.1</version>
             </dependency>
             <dependency>
                 <groupId>org.dspace</groupId>
@@ -1476,7 +1476,7 @@
             <dependency>
                 <groupId>commons-codec</groupId>
                 <artifactId>commons-codec</artifactId>
-                <version>1.10</version>
+                <version>1.16.0</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.commons</groupId>
