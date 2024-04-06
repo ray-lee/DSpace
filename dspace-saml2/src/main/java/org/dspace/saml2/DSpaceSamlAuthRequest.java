@@ -38,8 +38,7 @@ public class DSpaceSamlAuthRequest extends HttpServletRequestWrapper {
     public String getMethod() {
         // Without this, we could do something in WebSecurityConfiguration.java like:
         //   http.csrf().ignoringAntMatchers("/api/authn/saml/**")
-        // This has the advantage of not scattering SAML-related configuration outside of this
-        // module.
+        // This has the advantage of not scattering SAML-related configuration outside of this module.
 
         return HttpMethod.GET.name();
     }

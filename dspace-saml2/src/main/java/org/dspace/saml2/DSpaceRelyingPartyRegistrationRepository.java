@@ -10,7 +10,6 @@ package org.dspace.saml2;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
-import java.net.MalformedURLException;
 import java.security.KeyFactory;
 import java.security.PrivateKey;
 import java.security.cert.CertificateFactory;
@@ -29,8 +28,9 @@ import org.dspace.services.ConfigurationService;
 import org.dspace.services.factory.DSpaceServicesFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.io.DefaultResourceLoader;
 import org.springframework.core.io.Resource;
-import org.springframework.core.io.UrlResource;
+import org.springframework.core.io.ResourceLoader;
 import org.springframework.security.saml2.core.Saml2X509Credential;
 import org.springframework.security.saml2.provider.service.registration.InMemoryRelyingPartyRegistrationRepository;
 import org.springframework.security.saml2.provider.service.registration.RelyingPartyRegistration;
@@ -126,7 +126,7 @@ public class DSpaceRelyingPartyRegistrationRepository implements RelyingPartyReg
                         assertingParty.singleSignOnServiceBinding(Saml2MessageBinding.valueOf(binding.toUpperCase()));
                     }
 
-                    Boolean shouldSignRequest = ssoConfiguration.getBoolean("sign-request");
+                    Boolean shouldSignRequest = ssoConfiguration.getBoolean("sign-request", null);
 
                     if (shouldSignRequest != null) {
                         assertingParty.wantAuthnRequestsSigned(shouldSignRequest);
@@ -156,19 +156,21 @@ public class DSpaceRelyingPartyRegistrationRepository implements RelyingPartyReg
                     }
                 }
 
-                assertingPartyConfiguration.childConfigurationsAt("verification.credentials").stream()
-                    .forEach(credentialsConfiguration -> {
-                        String certificateLocation = credentialsConfiguration.getString("certificate-location");
+                List<Saml2X509Credential> verificationCredentials =
+                    assertingPartyConfiguration.childConfigurationsAt("verification.credentials").stream()
+                        .map(credentialsConfiguration -> credentialsConfiguration.getString("certificate-location"))
+                        .filter(certificateLocation -> certificateLocation != null)
+                        .map(certificateLocation -> certificateFromUrl(certificateLocation))
+                        .filter(certificate -> certificate != null)
+                        .map(certificate -> Saml2X509Credential.verification(certificate))
+                        .collect(Collectors.toList());
 
-                        if (certificateLocation != null) {
-                            X509Certificate certificate = certificateFromUrl(certificateLocation);
-
-                            if (certificate != null) {
-                                assertingParty.verificationX509Credentials(credentials ->
-                                    credentials.add(Saml2X509Credential.verification(certificate)));
-                            }
-                        }
+                if (verificationCredentials.size() > 0) {
+                    assertingParty.verificationX509Credentials(credentials -> {
+                        credentials.clear();
+                        credentials.addAll(verificationCredentials);
                     });
+                }
             });
 
             configuration.childConfigurationsAt("signing.credentials").stream()
@@ -223,7 +225,7 @@ public class DSpaceRelyingPartyRegistrationRepository implements RelyingPartyReg
      *
      * @see <a href="https://www.baeldung.com/java-read-pem-file-keys">Baeldung</a>
      *
-     * @param url The URL where the PRM file is located. This can be a file:// URL.
+     * @param url The URL where the PRM file is located. This can be a file, http(s), or classpath URL.
      * @return The private key.
      */
     private PrivateKey privateKeyFromUrl(String url) {
@@ -231,12 +233,10 @@ public class DSpaceRelyingPartyRegistrationRepository implements RelyingPartyReg
             return null;
         }
 
-        Resource resource;
+        Resource resource = getResourceFromUrl(url);
 
-        try {
-            resource = new UrlResource(url);
-        } catch (MalformedURLException ex) {
-            logger.error("Malformed private key url: " + url);
+        if (resource == null) {
+            logger.error("Resource not found at private key url: " + url);
 
             return null;
         }
@@ -271,7 +271,7 @@ public class DSpaceRelyingPartyRegistrationRepository implements RelyingPartyReg
     /**
      * Reads an X509 certificate from a given URL.
      *
-     * @param url The URL where the certificate is located. This can be a file:// URL.
+     * @param url The URL where the certificate is located. This can be a file, http(s), or classpath URL.
      * @return The X509 certificate.
      */
     private X509Certificate certificateFromUrl(String url) {
@@ -279,12 +279,10 @@ public class DSpaceRelyingPartyRegistrationRepository implements RelyingPartyReg
             return null;
         }
 
-        Resource resource;
+        Resource resource = getResourceFromUrl(url);
 
-        try {
-            resource = new UrlResource(url);
-        } catch (MalformedURLException ex) {
-            logger.error("Malformed certificate url: " + url);
+        if (resource == null) {
+            logger.error("Resource not found at certificate url: " + url);
 
             return null;
         }
@@ -302,5 +300,12 @@ public class DSpaceRelyingPartyRegistrationRepository implements RelyingPartyReg
 
             return null;
         }
+    }
+
+    private Resource getResourceFromUrl(String url) {
+        ResourceLoader resourceLoader = new DefaultResourceLoader();
+        Resource resource = resourceLoader.getResource(url);
+
+        return resource;
     }
 }
