@@ -158,6 +158,11 @@ public class WebSecurityConfiguration {
             .addFilterBefore(new OidcLoginFilter("/api/authn/oidc", authenticationManager,
                                                       restAuthenticationService),
                              LogoutFilter.class)
+            //Add a filter before our SAML endpoints to do the authentication based on the data in the
+            // HTTP request
+            .addFilterBefore(new SamlLoginFilter("/api/authn/saml", authenticationManager,
+                                                 restAuthenticationService),
+                             LogoutFilter.class)
             // Add a custom Token based authentication filter based on the token previously given to the client
             // before each URL
             .addFilterBefore(new StatelessAuthenticationFilter(authenticationManager, restAuthenticationService,
