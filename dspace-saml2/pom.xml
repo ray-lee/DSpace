@@ -59,6 +59,11 @@
                     <groupId>com.fasterxml.woodstox</groupId>
                     <artifactId>woodstox-core</artifactId>
                 </exclusion>
+                <!-- Later version brought in by dspace-api -->
+                <exclusion>
+                    <groupId>org.apache.velocity</groupId>
+                    <artifactId>velocity</artifactId>
+                </exclusion>
             </exclusions>
         </dependency>
     </dependencies>
